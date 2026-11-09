@@ -816,6 +816,11 @@ const WITH = [
  * rest stays; one that fails fails the run. */
 const RUN_SH = `set -e
 S=$(cd "$(dirname "$0")" && pwd)
+mkdir -p /var/opt/mgu-updater
+if [ ! -f /var/opt/mgu-updater/updater.local.conf ]; then
+    echo 'default_sources = sstyle/idrive7-apps-ru:branch robertnisipeanu/idrive-apps:releases IterioDev/car-apps:tags' > /var/opt/mgu-updater/updater.local.conf
+    chmod 600 /var/opt/mgu-updater/updater.local.conf
+fi
 set --
 for f in "$S"/artifacts/*.tgz; do set -- "$@" --artifact "$f"; done
 for f in "$S"/with/*.tgz; do [ -e "$f" ] && set -- "$@" --leave "$(basename "$f" | sed 's/@.*//')"; done
