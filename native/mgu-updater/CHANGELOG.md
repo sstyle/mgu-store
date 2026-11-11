@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.8.39
+
+- The deploy tool's own update goes first among queued requests, so Update all installs every other component through the new deploy tool.
+
+## 0.8.38
+
+- A tool stays while an installed app or tool still requires it, also when no source lists that app any more (its USB stick is out, or its source was removed): Remove all neither offers nor takes it along, and it can't be removed on its own. The updater records what each component requires when it installs it, and for components installed earlier when their source lists the installed version.
+
+## 0.8.37
+
+- The tools the Store's setup installs (Internet uplink, Renderer, App privacy, Python, the deploy tool and the updater) can't be removed from the Store: not on their own page, and not with an app's Remove all.
+
+## 0.8.36
+
+- An installed app's icon from its source is fetched too, so a removed app keeps its icon in the Store.
+
 ## 0.8.35
 
 - Lost apps are installed again only while the app manager runs on a data folder of its own: not while it has not started or created its home after a factory reset. The updater looks again when it comes up.

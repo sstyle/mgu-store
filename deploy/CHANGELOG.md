@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.8.11
+
+- On iDrive 7 units whose Telematics reports iDrive 8 (`hmiVersion` 3), apps get their tile: before the app manager installs an app, its package lists that HMI wherever it lists iDrive 7 and nowhere else, so the app manager installs the iDrive 7 UI, texts and images. Other units get packages as they are.
+- `status` puts an installed app's iDrive 7 UI, texts and images in place from its kept package when the installed ones differ, as on such units for apps installed earlier, and the tile shows from the next start (a restart is pending). `status --read-only` and `--json` list them as `hmi_parts`.
+
+## 0.8.10
+
+- `status --read-only` prints the same report and changes nothing: the repairs, list and drop-in updates and app manager restarts `status` makes as root are left undone, and their lines say `pending (read-only)` when there is something to do.
+- `mgu-install.js status` prints the deploy tool's status from the head unit, found like `first-install`, for users to paste when an app's tile does not show (`install.sh` and `install.ps1` run it the same way). It uses `status --read-only`; with a deploy tool without it, plain `status`, and one line after the report says that may have repaired things. Without a deploy tool it says the Store is not installed.
+
+## 0.8.9
+
+- A tool's new version is on disk, every file of it, before its `current` points to it, at every install and update and at the deploy tool's own; each switch of `current` is on disk before the deploy tool goes on. A power cut or ignition off right after an update leaves the version before or the new one whole, never a file the head unit had not written yet.
+- recmgr's restart list keeps the firmware's own entries: an update, rollback or uninstall takes out of each of its sections only the names the deploy tool put there, recorded in `/var/opt/mgu-deploy/recmgr-names.json`, and never a name the stock backup's copy of the list has. For tools installed before that record, a name goes only when the stock backup, taken on the firmware running, lacks it; without such a backup the name stays, and the run says so.
+
 ## 0.8.8
 
 - The deploy tool never creates the app manager's home or data folder (`/var/opt/public/oap/oap_12201`, its `data`), which the app manager creates at its first start after a factory reset. While they are missing, `custom_apps.json` and `local-only-apps.json` are not written (on iDrive 8 `relist` and `status` list our apps once the folder is there), app installs are refused, and `status` reports no lost app.
@@ -205,7 +220,7 @@ No changes.
 
 ## 0.5.8
 
-- Apps whose SOME/IP manifest does not name the certification service (`de.bmw.infotainment.certification.Certification`), which includes every idrive7-apps app, install: the deploy tool adds that entry when it prepares the package. Without it, the car does not let the new app's uid reach the service that creates its keychain: MainApp's install waited for a keychain that never came and failed. The emulator does not check those permissions.
+- Apps whose SOME/IP manifest does not name the certification service (`de.bmw.infotainment.certification.Certification`), which includes every idrive7-apps app, install: the deploy tool adds that entry when it prepares the package. Without it, the car does not let the new app's uid reach the service that creates its keychain: MainApp's install waited for a keychain that never came and failed.
 - What an interrupted app install left (the app listed for MainApp and its package in `preinstalled_apps`, which MainApp tries to install at every start) is removed before the next app install, when this tool put it there: its record of the install names a run that is gone, or its install snapshot shows the app was not listed and the package absent before. Anything else stays, said in the output.
 
 ## 0.5.7

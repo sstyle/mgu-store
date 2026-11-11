@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.9.35
+
+No changes.
+
+## 0.9.34
+
+A Remove the updater refuses says why on the component's page, such as
+*Needed by Waze on cluster* when another installed app needs it.
+
 ## 0.9.33
 
 Text with ‘ ’ “ ” or a no-break space, such as an iPhone hotspot named

@@ -536,23 +536,42 @@ function testReleaseTexts() {
     });
 }
 
-/* release.js publish: a gated component needs a passing emulator gate record for its exact source. */
+/* release.js: each app's catalog entry names its icon, the PNG its entry point shows. */
+function testReleaseIcons() {
+    const { components, catalogEntry } = require(path.join(__dirname, '..', '..', 'release', 'release.js'));
+    const crypto = require('crypto');
+    const all = components();
+    const store = all.find((c) => c.id === 'robertn_store');
+    const bytes = fs.readFileSync(path.join(REPO, 'apps', 'robertn_store', 'package', 'rhmiData', 'variantGroups', 'Common', 'images', 'store_icon.png'));
+    check('release: an app has the icon its entry point names', store.icon && store.icon.file.endsWith('store_icon.png') &&
+        store.icon.sha256 === crypto.createHash('sha256').update(bytes).digest('hex'), JSON.stringify(store.icon));
+    const tool = all.find((c) => c.kind === 'tool');
+    check('release: a tool has none', all.filter((c) => c.kind === 'tool').every((c) => !c.icon));
+    const file = path.join(fs.mkdtempSync(path.join(require('os').tmpdir(), 'mgu-icon-')), 'a.tgz');
+    fs.writeFileSync(file, 'x');
+    const e = catalogEntry(store, file);
+    const t = catalogEntry(tool, file);
+    check('release: an app\'s catalog entry lists its icon as the asset <id>.png with its sha256, a tool\'s none',
+        e.icon === 'robertn_store.png' && e.iconSha256 === store.icon.sha256 && t.icon === undefined && t.iconSha256 === undefined,
+        JSON.stringify([e.icon, e.iconSha256, t.icon]));
+}
+
+/* release.js publish: a gated component needs a successful release-check/<id>
+ * status on its source commit. */
 function testReleaseGate() {
     const { gateProblem } = require(path.join(__dirname, '..', '..', 'release', 'release.js'));
     const c = { id: 'mgu-render', kind: 'tool', version: '0.6.8' };
     const src = 'a'.repeat(40);
-    const record = (o) => Object.assign({ id: 'mgu-render', version: '0.6.8', source: src, result: 'pass' }, o);
-    check('release gate: a passing record for this version and source lets it publish', gateProblem(c, record({}), src) === null);
-    check('release gate: no record refuses it', /no emulator gate record/.test(gateProblem(c, null, src)));
-    check('release gate: a record for another source refuses it', /not this source/.test(gateProblem(c, record({}), 'b'.repeat(40))));
-    check('release gate: a record for another component refuses it', /not this source/.test(gateProblem(c, record({ id: 'mgu-updater' }), src)));
-    check('release gate: a record that did not pass refuses it', /did not pass/.test(gateProblem(c, record({ result: 'fail' }), src)));
-    check('release gate: the record names the source; the release picks the version',
-        gateProblem(Object.assign({}, c, { version: '0.6.9' }), record({}), src) === null);
-    const app = { id: 'robertn_store', kind: 'app', version: '0.9.15' };
-    check('release gate: an app\'s record names its source too, whatever artifact the gate built',
-        gateProblem(app, { id: 'robertn_store', version: '0.9.14', source: src, result: 'pass', artifactSha256: 'f'.repeat(64) }, src) === null);
-    check('release gate: a component outside the gate needs no record',
+    const status = (o) => Object.assign({ context: 'release-check/mgu-render', state: 'success', description: 'c'.repeat(64) }, o);
+    check('release gate: a successful status lets it publish', gateProblem(c, status({}), src) === null);
+    check('release gate: no status refuses it', /release-check\/mgu-render on aaaaaaaaaaaa is missing/.test(gateProblem(c, null, src)));
+    check('release gate: a failed status refuses it', /is failure/.test(gateProblem(c, status({ state: 'failure' }), src)));
+    check('release gate: a pending status refuses it', /is pending/.test(gateProblem(c, status({ state: 'pending' }), src)));
+    check('release gate: the status names the source; the release picks the version',
+        gateProblem(Object.assign({}, c, { version: '0.6.9' }), status({}), src) === null);
+    check('release gate: an app is gated too',
+        /missing/.test(gateProblem({ id: 'robertn_store', kind: 'app', version: '0.9.15' }, null, src)));
+    check('release gate: a component outside the gate needs no status',
         gateProblem({ id: 'mgu-updater', version: '0.8.7' }, null, src) === null);
 }
 
@@ -745,6 +764,7 @@ function testReleaseVersions() {
 try {
     testReleaseRequires();
     testReleaseTexts();
+    testReleaseIcons();
     testReleaseGate();
     testReleaseVersions();
     testUntar();
