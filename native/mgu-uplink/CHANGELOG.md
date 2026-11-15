@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.7.12
+
+- iDrive 7 with the car's `wlan0`: once the car's Wi-Fi is back on after being switched off, Wi-Fi is used again within about 10 s, with no give-back wait. While it is off, the reason shown is "the car's Wi-Fi is off".
+- A `wifi-scan` request while Wi-Fi is `unavailable` (outside a give-back's wait) checks again at once.
+
+## 0.7.11
+
+- Switching Wi-Fi on (`wifi-enable`) scans at once, the same scan as a `wifi-scan` request, also during wireless CarPlay or Android Auto.
+
+## 0.7.10
+
+- Switching Wi-Fi on (`wifi-enable`) also scans once, as soon as the supplicant takes requests, so the network list fills without a `wifi-scan` request. During wireless CarPlay or Android Auto that scan waits for the session to end.
+
 ## 0.7.9
 
 - No Remove in the Store: the uplink stays while the Store is installed.

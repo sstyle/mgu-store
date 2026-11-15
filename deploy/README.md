@@ -244,7 +244,11 @@ which connection they used:
    (`ssh -b`), so the link-local route goes out of the ENET interface
    without a relay. The address that answered is remembered.
 
-When nothing answers it stops before downloading anything, naming the
+When the head unit was found but its SSH does not answer (the hotspot's
+address refuses port 22 or answers there without SSH, or the gateway
+reported an address whose port 22 does not answer), it stops with
+`found the head unit at <address>, but its SSH is closed: enable root SSH
+first, then run this again`. When nothing answers it stops before downloading anything, naming the
 hotspot, the ENET cable and `--host`; on Linux also how to give the ENET
 adapter a link-local address (`nmcli con mod <its connection>
 ipv4.method link-local`) when no interface has one, or, with several
@@ -263,6 +267,12 @@ and a unit's key can change. With OpenSSH 8.8 or newer it adds
 `HostKeyAlgorithms=+ssh-rsa` and `PubkeyAcceptedAlgorithms=+ssh-rsa`,
 which the unit's sshd needs.
 `--arm-debug` stays with `deploy/hu`.
+
+While a step takes longer than 30 s (finding the unit, a download, the
+install or removal on the head unit) it prints one line about every 30 s,
+such as `the head unit is still installing (2 min)`. Stopped with Ctrl+C
+(or SIGTERM), it prints `stopped; run the same command again to finish`
+and exits as the signal would.
 
 ```sh
 node mgu-install.js first-install [--from <folder>] [--no-renderer] [--no-uplink] [--token] [ssh options]
@@ -453,7 +463,11 @@ updater then updates from it what that source installed
 releases or package files are `uninstallable`)
 and each artifact beside it under a relative URL; an `.mgu` keeps its file
 name and is listed as `<id>@<version>.tgz`, which the deploy tool installs
-by its content. A folder is written next to the old one and replaces it
+by its content. Each icon a catalog entry lists (`icon`) is copied beside
+it as `<id>.png`, checked against its `iconSha256`, and the entry names
+that file; an icon that cannot be read or does not match is left out,
+saying so, and never stops the stick (an `https` icon stays listed for
+the updater to fetch when online). A folder is written next to the old one and replaces it
 once complete, so the stick holds the newer versions only; other folders
 and the stick's other files stay. A root-service package of another
 `mguService`, a folder over the updater's limits (catalog.json over 1 MiB, a checkout over
@@ -463,13 +477,13 @@ and the stick's other files stay. A root-service package of another
 
 ```
 mgu-deploy.sh check [--artifact <file>...]
-mgu-deploy.sh install [--artifact <file>...] [--skip-older] [--other-source] [--leave <id>...] [--yes]
+mgu-deploy.sh install [--artifact <file>...] [--skip-older] [--other-source] [--leave <id>...] [--keep-safe-mode] [--yes]
 mgu-deploy.sh status [--read-only] [--json]   # --read-only: changes nothing
-mgu-deploy.sh relay [<id>...] --yes           # a stale tool's files from the copy kept here, no install step
+mgu-deploy.sh relay [<id>...] [--keep-safe-mode] --yes   # a stale tool's files from the copy kept here, no install step
 mgu-deploy.sh setup <id> --yes                # a tool laid again from that copy, its install step included
 mgu-deploy.sh uninstall <id> [--yes]
 mgu-deploy.sh remove-all [--json] | remove-all --yes
-mgu-deploy.sh rollback <id> [--yes]
+mgu-deploy.sh rollback <id> [--keep-safe-mode] [--yes]
 mgu-deploy.sh restore [name] [--yes]
 mgu-deploy.sh backups
 mgu-deploy.sh fallback <on|off|status|migrate> [--yes]
@@ -564,8 +578,12 @@ or of any version with `--other-source` (the updater's install of a tool
 another source installed), runs the `deactivate` of the version it
 replaces first, with all of that version in place, as its removal does:
 one that fails refuses the install (exit 2), and that version stays
-current and runs its `activate` again. An update runs only the new
-version's `activate`. Whichever it is, what the versions kept under
+current and runs its `activate` again. An older version runs it after a
+firmware update too: the version it replaces may have changed the new
+firmware's files through its own tool since, which the older one does not
+know; one that fails there refuses the install (exit 2) and that version
+stays current, its files only, needing setup (below). An update runs only
+the new version's `activate`. Whichever it is, what the versions kept under
 `versions/` installed and the new one does not list goes, as in a
 rollback, in the install's own rootfs window: their running units are
 stopped first (when recmgr has loaded them), the new version's list
@@ -1018,8 +1036,8 @@ them (below).
   Any install of the tool after a firmware update (the firmware recorded
   with the tool, `state.json` `tools`, differs from the unit's, or the
   tool needs setup since) leaves such versions kept and records them as
-  deactivated, as it does the version a downgrade or an install from
-  another source replaces, so no later install runs them; laying it
+  deactivated, as it does the version an install of the same or a newer
+  version from another source replaces, so no later install runs them; laying it
   again for another reason (a unit missing) runs them first, and one that
   fails stays kept and owed while the current version is laid again. A
   unit, link or drop-in another installed tool lists is never stopped or
@@ -1366,6 +1384,14 @@ The app manager installs our apps itself.
   is not restarted and the boot unit lists the apps from the next start.
   A copy that does not build leaves the fallback off, the install stands,
   and `status --json` gives the reason as `fallback.refused`.
+- **Unlisted apps.** On iDrive 7, an app of ours (`mguLocalOnly`) the
+  manager has registered from any source, its own reinstall from
+  `preinstalled_apps` included, that `custom_apps.json` does not list has
+  no tile. `status` run as root and every app install list it, and its
+  tile shows from the manager's next start (with the fallback lost, once
+  an install turns it on again). An install in which every app is current
+  lists it and restarts the manager once, as for a lost fallback; so does
+  one after a run that listed an app while the running manager was up.
 - **Start type.** `custom_apps.json` lists every app with
   `-appStartType` `manually`, or the value its `package.json` names in
   `"mguAppStartType"` (`autostart`, `lum` or `manually`; any other value
@@ -1677,10 +1703,22 @@ drop-in `/etc/systemd/system/<unit>.d/zz-mgu-deploy-limits.conf`:
 [Unit]
 StartLimitIntervalSec=600
 StartLimitBurst=20
+ConditionPathExists=|!/var/opt/mgu-deploy/safe-mode
+ConditionPathExists=|/run/mgu-deploy/safe-mode-lifted
+ConditionPathExists=|!/var/opt/mgu-deploy/current/safe_mode.sh
 
 [Service]
 LimitCORE=1
 ```
+
+The triggering `ConditionPathExists=|` lines (any one lets the unit start)
+keep it off in safe mode unless an install lifts it (below), and never
+under an installed deploy tool without safe mode (an older one); a
+tool's socket, timer and path units get them alone, in a drop-in of the
+same name. A unit that runs in safe mode (`"runsInSafeMode": true`) has
+none: a service gets the limits alone, any other unit no drop-in. Nothing
+orders a unit on safe mode's guard, so no unit, BMW's included, waits for
+it at boot.
 
 - `LimitCORE=1`: the kernel pipes core dumps to the crash handler, which
   restarts the head unit for a program its list does not name, and it writes
@@ -1707,6 +1745,152 @@ A change is followed by `daemon-reload`; a running service takes the limits at
 its next start (the unit has no `prlimit` to change a running process).
 `status --json` reports the step as `service_limits: {state, reason}`. Units of other components and the car's
 own are never given one.
+
+### Safe mode
+
+When the head unit keeps restarting soon after it starts, and nothing more
+specific (such as a tool's own boot recovery) has ended it, our tools'
+units stay off: **safe mode**. While `/var/opt/mgu-deploy/safe-mode` exists,
+no unit of an installed tool starts, except those that run in safe mode;
+BMW's units are never touched.
+
+**What counts.** A start counts as failed when it ended in a restart recmgr
+or crashhandler asked for within 2 minutes of the start (the system uptime
+at the shutdown), and none of our tools asked for the restart. A restart is
+theirs on either record of it:
+
+- the `restartInfo.xml` each writes under
+  `/var/opt/public/sin/<recmgr|crashhandler>/` when it asks, written in this
+  start (its modification time not before `/proc/stat`'s `btime` and not
+  after now, a second of slack each way);
+- a row recmgr added to its crash statistics since the start's boot step
+  (`/var/opt/public/sin/recmgr/recmgr_stats.db`, table `Crash`, whose
+  `CrashKey` only grows), with the statistics written within 60 s of the
+  shutdown. recmgr adds the row for a failure it restarts the head unit for,
+  just before it asks for the restart, in the same start; none for a
+  service in its lists, nor for a crash of a program crashhandler lists
+  (`node`) in a service that keeps running, nor for crashhandler's own
+  restarts, which its `restartInfo.xml` records. recmgr's startup, some 10 s
+  into a start, deletes its `restartInfo.xml`, also one written in that
+  same start: a restart before then leaves only this record. A row has no
+  time of its own (`Crash`: `CrashKey`, `Timestamp`, `AppID`, `UserID`,
+  `CrashID`, `LC`; recmgr leaves `Timestamp` empty and `LC` 0), so the time
+  is the database file's: its last write of any kind. The mark cannot read
+  the shutdown's kind itself either (a restart, a switch-off and a normal
+  restart all run `var-opt-ro.service`). So a row added earlier in the
+  start counts when the database was written again within a minute of the
+  shutdown (recmgr writes it for the failures it restarts the head unit
+  for), as does a restart recmgr asked for that the NodeStateManager did not
+  take, followed within a minute by a switch-off. A read that meets
+  recmgr's commit waits up to 200 ms for it.
+
+The shutdown that ends the fourth failed start in a row turns safe mode on,
+so the fifth start is the first without our tools: four failed starts.
+Nothing else counts:
+
+| How a start ended | The count |
+|---|---|
+| a restart recmgr or crashhandler asked for, up less than 2 minutes | + 1 |
+| a shutdown without either record after 2 minutes: a switch-off, the HMI's, the Store's or another normal restart | back to 0 |
+| a restart our tools asked for (`restart-requested` names the start) | back to 0 |
+| the start stayed up 5 minutes | back to 0 |
+| a shutdown without either record within 2 minutes (a short drive, or a restart whose records were lost) | kept |
+| a crash restart between 2 and 5 minutes | kept |
+| no shutdown mark (a power cut, a reset that skipped `var-opt-ro.service`, `var-opt-ro.service` failing before the mark ran, `systemctl reboot`) | kept |
+
+A suspend keeps the start (and its boot id) and its uptime runs on, so a
+drive after it never counts as an early end. A state file that is missing
+or does not read as `safe_mode.sh` writes it counts nothing, so it can
+never turn safe mode on.
+
+**How.** `safe_mode.sh` (beside `mgu-deploy.js`) does it, in sh:
+
+- `mark`, at each shutdown through the NodeStateManager: the drop-in
+  `/etc/systemd/system/var-opt-ro.service.d/40-mgu-deploy-safe-mode.conf`
+  runs it before `/var/opt` goes read-only (`ExecStartPre=-`, so it never
+  holds up the remount). recmgr's and crashhandler's restarts, a switch-off
+  and a normal restart all take that path. It writes `last-shutdown`
+  (`<boot id> crash|normal <uptime s> [recmgr] [crashhandler]
+  [recmgr_stats]`), once before the statistics read and again after it, so
+  a shutdown cut during the read still finds the start marked, and
+  `safe-mode-count` (`<failed starts in a row before this start> <boot id>
+  <with this start>`; a second shutdown of the same start counts it again
+  from the first number), and at the fourth failed
+  start in a row writes `safe-mode`, `{"at": "<UTC time>", "reason":
+  "<why>"}`, and starts the count again. The flag is there before the next
+  start's units, so nothing has to wait at boot.
+- `boot`, early at each start: `mgu-deploy-safe-mode.service`
+  (`DefaultDependencies=no`, after `/var/opt` is mounted, enabled for
+  `multi-user.target`, in recmgr's list, and ordered with no other unit).
+  It writes `safe-mode-crashes` (`<boot id> <recmgr's last crash key>`), the
+  baseline for this start's mark.
+- `up`, the same service: at 5 minutes of uptime the count goes back to 0,
+  by `/proc/uptime`, looked at every 5 s, so a suspend counts as time up. The
+  service then stays up, so recmgr never sees it end.
+
+The statistics are read with the database opened read-only
+(`file:…?mode=ro`, the firmware's `sqlite3` 3.22), for at most 2 s.
+
+Each file is written whole (renamed into place) under `/var/opt/mgu-deploy`.
+On a head unit whose firmware has `var-opt-ro.service`, an install lays the
+service, its link, the drop-in and the recmgr entry (entry first), as does
+`status` (with the limits drop-ins, under the same rules); `remove-all` takes
+them out.
+
+**A restart our tools ask for** is marked first: its start's boot id
+(`/proc/sys/kernel/random/boot_id`) in `/var/opt/mgu-deploy/restart-requested`,
+written whole before the request. The updater's `reboot`, `mgu-install.js`'s
+restart and mgu-render's car test do it; another tool that asks for a
+head-unit restart writes it the same way.
+
+**What runs in safe mode.** A unit whose entry in the tool's `component.json`
+says so:
+
+```json
+"units": [{ "name": "acme-recovery.service", "from": "systemd/acme-recovery.service", "runsInSafeMode": true }]
+```
+
+Give it to units that recover the head unit or leave safe mode: the updater
+(which installs the fix and leaves safe mode; the deploy tool also treats a
+published updater's unit without the flag so), and units that put BMW's
+files back. `deploy/hu artifact` carries the flag into the kit. The deploy
+tool's own units (the boot check, the fallback, the guard) are not tool
+units and run as before.
+
+**Leaving it.** The next install that goes through as a whole (an install
+or update of any app or tool, the same version again included) leaves it.
+`safe-mode` stays on disk while it runs; the install lifts it in RAM, with
+`/run/mgu-deploy/safe-mode-lifted` (the drop-in's other, triggering
+condition), so what it starts runs. `safe-mode` goes once every artifact,
+every tool it lays again, every app it installs afresh and the deploy
+tool's own update are through. An install that fails, partly or wholly,
+falls short (a tool it lays again fails, warned), or that the MainApp guard
+stops ends the lift and keeps it; one cut short leaves the lift until the
+next run of the deploy tool or the next start (a power cut included), as
+`/run` does not outlive a start. Only the outermost install settles it;
+an app installed afresh inside it counts towards it, and an app's
+`rollback` (Undo update) is one install: one that fails keeps it, also when
+the version before goes back in. An install, `relay` or app `rollback`
+with `--keep-safe-mode` (the updater's own repairs: a lost app installed
+again, a stale tool laid again or updated, and the rollback of a Store such
+a repair updated that did not start) lifts it the same way and keeps it.
+`safe-mode off --yes`
+removes it too: the Store's Leave safe mode, through the updater. Either
+way the count starts again, the tools start at the next start of the head
+unit, and until then `status` lists `mgu-deploy` under `pending_reboot`
+(`our tools start at the next start`). The boot check (`verify`) waits
+for a start without safe mode. `status --json` reports `safe_mode: {at,
+reason}` while it is on (both null for a file that does not read as
+written), else `null`; `safe-mode [--json]` says the same.
+
+**An older deploy tool.** An install of an older deploy tool, or `rollback
+mgu-deploy` to one, that has no safe mode (no `safe_mode.sh` in its
+version) takes the guard's unit, link and drop-in out and leaves safe mode,
+its count and its records with it, as above; the recmgr entry stays, naming
+no unit. Whatever an older version leaves on disk does nothing: the limits
+drop-in's third condition lets every unit start while the installed
+version has no `safe_mode.sh`, and the guard's unit, if still there, runs
+no script and stays up without one.
 
 ### One transaction per artifact
 
@@ -1755,9 +1939,10 @@ our boot units) sets every component up again:
   newer version is reachable): only for the tools named, files only for
   one with an install step, whole for one without. Until a hook of the
   tool has run on the new firmware, no install of it runs a hook of a
-  version it replaces (a due deactivate, the deactivate of a downgrade or
-  of an install from another source, or the activate of the version a
-  failed install goes back to, which then needs setup). An install that a
+  version it replaces (a due deactivate, the deactivate of an install of
+  the same or a newer version from another source, or the activate of the
+  version a failed install goes back to, which then needs setup); a
+  downgrade runs the deactivate of the version it replaces, as above. An install that a
   refusal stops after it laid tools' files again exits 1, naming them. A tool installed before copies were kept
   says so; its source installs it again (the updater, `repair`).
   `mgu-install.js first-install` installs the release's tools as usual and
@@ -1832,7 +2017,15 @@ folder) and `/var/opt/mgu-deploy-kit-<n>` folders a day old. A tool's earlier
 none, else it is removed.
 
 `restore [name]` (default `stock`) first snapshots the current state, then
-puts every recorded file back, removes what the snapshot shows as absent
+runs, with all of it in place, the `deactivate` of each tool's current
+version the backup puts on another version (as a rollback does), and the
+hooks of each tool's removal the backup shows it absent from (as a removal
+does; a restart one asks for is pending under the deploy tool). One that
+fails refuses the restore (exit 2, nothing restored), and the versions
+deactivated run their `activate` again, as they do when the restore fails
+after them, but for a tool it has removed by then. A restore runs no
+`activate` of the version it puts back. It then puts every recorded file
+back, removes what the snapshot shows as absent
 (a tool's `/var/opt/<id>`, an app's home and package, `custom_apps.json`),
 keeps the updater's sources and credentials, verifies every file against
 its checksum (a mismatch is exit 1
@@ -1873,7 +2066,7 @@ bundles changed.
 
 Our apps install through it. `fallback on` (and every app install) builds a
 copy of the stock `/usr/lib/oap-mainapp/src/main.js` (or `main.bundle.js` on
-MainApp 6.5.5, where `main.js` is a bytecode-loader stub) with one change in
+MainApp 6.5.5 and 6.4.8, where `main.js` is a bytecode-loader stub) with one change in
 `ProvisioningNotifier`: an app with no provisioning entry takes it from
 `oap_12201/data/custom_apps.json`, which lists our apps, both in MainApp's
 `installable_apps` (so the manager installs it) and as the app's own section
@@ -1892,7 +2085,13 @@ has initialized, at the step after `mainApp.init()`:
 mainApp.init()}).then(()=>{
 ```
 
-When that anchor does not occur exactly once, the copy is built without
+or, on MainApp 6.4.8, which initializes its bookmark controller beside it:
+
+```
+Promise.all([mainApp.init(),bookmarkController.init()])}).then(()=>{
+```
+
+Unless exactly one of them occurs exactly once, the copy is built without
 the hook and the build says so; app installs then go through a bounce.
 
 On iDrive 7 the copy also puts our apps first in MainApp's install queue.
@@ -2030,7 +2229,8 @@ stdout, read-only, taking no lock, of this shape:
   "appmanager": { "present", "version", "app", "daemon", "record" } | null,
   "mainapp_guard": "<why app changes wait for the next start>" | null, "last_bounce_at": <epoch s> | null,   (iDrive 7)
   "lost_apps": [{ "id", "version", "package" }],
-  "hmi_parts": [{ "id", "version", "files": ["rhmiData/<folder>/<file>"] }] }   (iDrive 7)
+  "hmi_parts": [{ "id", "version", "files": ["rhmiData/<folder>/<file>"] }],   (iDrive 7)
+  "safe_mode": { "at", "reason" } | null }
 ```
 
 ## Tests

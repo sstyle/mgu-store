@@ -203,7 +203,11 @@ CarPlay keep running. Everything else is as above. Our networks are added
 to the car's supplicant only while Wi-Fi is on and are never written to
 its configuration; the car's own networks, hotspot and radio are left
 alone. Wi-Fi is `unavailable` while the car uses `wlan0` itself (a network
-of its own, or its Wi-Fi switched off). WPA2 personal and open networks.
+of its own), or while the car's Wi-Fi is switched off; once it is back on,
+`wlan0` is taken again at the next 10 s check, without a give-back's wait.
+Outside a give-back's wait, a `wifi-scan` request while Wi-Fi is
+`unavailable` checks again at once.
+WPA2 personal and open networks.
 
 The radio is shared with wireless CarPlay, and every station scan takes it
 off CarPlay's channel. So while the uplink is online on a device that ranks
@@ -211,8 +215,8 @@ above Wi-Fi (`preferred = phone` with a phone, `usb` with an adapter or
 stick), and Wi-Fi is not joined, our networks are switched off in the car's
 supplicant (`wifi.link` `idle`). With none enabled, it stops its periodic
 scans. They are switched on again as soon as that uplink is offline or gone,
-and for 8 s after a `wifi-scan` request. A start or a Wi-Fi switch-on adds
-them switched on.
+and for 8 s after a `wifi-scan` request or the scan of a switch-on. A
+start or a Wi-Fi switch-on adds them switched on.
 
 #### The band
 
@@ -319,7 +323,7 @@ taken), and `preferred` while a group is preferred:
 
 `networks` is the latest scan (the strongest per name, at most 20,
 strongest first), `saved` the saved names, `scanning` true for 8 s after a
-scan request, `signal` dBm, `backend` what joins (`mgu-wpa` or
+scan request or a switch-on, `signal` dBm, `backend` what joins (`mgu-wpa` or
 `car-supplicant`) while Wi-Fi is on and there is a radio, `paused`
 (`carplay`, `android-auto`) while the supplicant makes no scans of its own
 during that wireless session, `freq` the frequency (MHz) of the access
@@ -353,7 +357,7 @@ updater only, which relays these; `status.json` shows the results.
 | Request | |
 |---|---|
 | `{"op": "prefer", "kind": "phone"}` | the group tried first (`wifi`, `usb`, `phone`; `""` for none); takes effect within 5 s |
-| `{"op": "wifi-enable", "on": true}` | Wi-Fi on or off |
+| `{"op": "wifi-enable", "on": true}` | Wi-Fi on or off; on also scans at once, as `wifi-scan` does |
 | `{"op": "wifi-5ghz", "on": true}` | Allow 5 GHz: joins on either band (The band, above) |
 | `{"op": "usb-phone", "on": false}` | phones over USB taken or left alone (Phones over USB switched off, above) |
 | `{"op": "wifi-scan"}` | scan now |
